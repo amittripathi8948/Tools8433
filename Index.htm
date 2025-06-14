@@ -1,0 +1,231 @@
+import 'package:flutter/material.dart';
+import 'package:webview_flutter/webview_flutter.dart';
+
+class WatchAdsScreen extends StatefulWidget {
+  @override
+  _WatchAdsScreenState createState() => _WatchAdsScreenState();
+}
+
+class _WatchAdsScreenState extends State<WatchAdsScreen> {
+  late WebViewController _controller;
+
+  // Adsterra का HTML कोड
+  final String adsterraHtmlContent = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    </head>
+    <body style="margin:0; padding:0; display:flex; justify-content:center; align-items:center;">
+        <script type="text/javascript">
+            atOptions = {
+                'key' : '8e848be19c95c275d59a73180cf02fef',
+                'format' : 'iframe',
+                'height' : 90,
+                'width' : 728,
+                'params' : {}
+            };
+        </script>
+        <script type="text/javascript" src="//www.highperformanceformat.com/8e848be19c95c275d59a73180cf02fef/invoke.js"></script>
+    </body>
+    </html>
+  """;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text("Watch Ad & Earn")),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text("Ad is loading below..."),
+            SizedBox(
+              height: 100, // Ad के साइज़ के अनुसार सेट करें
+              width: double.infinity,
+              child: WebView(
+                initialUrl: 'about:blank',
+                javascriptMode: JavascriptMode.unrestricted,
+                onWebViewCreated: (WebViewController webViewController) {
+                  _controller = webViewController;
+                  // HTML कंटेंट को लोड करें
+                  _controller.loadHtmlString(adsterraHtmlContent);
+                },
+                // यहाँ आप Ad देखे जाने पर Backend को कॉल करके रिवॉर्ड दे सकते हैं।
+              ),
+            ),
+            SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: () {
+                // Backend को कॉल करें और यूजर को रिवॉर्ड दें
+                // rewardUserForWatchingAd();
+                Navigator.pop(context); // वापस जाएं
+              },
+              child: Text("I have watched the Ad, Claim Reward!"),
+            )
+          ],
+        ),
+      ),
+    );
+  }
+}// यह केवल एक उदाहरण है, इसे सुरक्षित तरीके से लागू करना होगा।
+async function processUpiPayment(amount, upiId, purpose, withdrawalId) {
+    // Razorpay या Paytm SDK का उपयोग करें
+    const razorpay = new Razorpay({
+        key_id: "YOUR_KEY_ID",
+        key_secret: "YOUR_KEY_SECRET",
+    });
+
+    try {
+        const payout = await razorpay.payouts.create({
+            account_number: "YOUR_BUSINESS_ACCOUNT", // आपका RazorpayX अकाउंट
+            fund_account_id: "FUND_ACCOUNT_FOR_UPI_ID", // पहले UPI के लिए फंड अकाउंट बनाना होगा
+            amount: amount * 100, // राशि पैसे में
+            currency: "INR",
+            mode: "UPI",
+            purpose: "payout",
+            queue_if_low_balance: true,
+            notes: {
+                reason: purpose,
+                withdrawalId: withdrawalId
+            }
+        });
+
+        // payout सफल होने पर डेटाबेस में status को 'completed' करें
+        console.log("Payout successful:", payout);
+        return { success: true, data: payout };
+    } catch (error) {
+        // payout विफल होने पर
+        console.error("Payout failed:", error);
+        return { success: false, error: error };
+    }
+}const functions = require("firebase-functions");
+const admin = require("firebase-admin");
+const express = require("express");
+const cors = require("cors");
+// Razorpay या Paytm SDK को यहाँ initialize करें
+// const Razorpay = require("razorpay");
+
+admin.initializeApp();
+const db = admin.firestore();
+const app = express();
+app.use(cors({ origin: true }));
+
+// Middleware to check if user is authenticated
+const isAuthenticated = async (req, res, next) => {
+    const { authorization } = req.headers;
+    if (!authorization || !authorization.startsWith("Bearer ")) {
+        return res.status(403).send("Unauthorized");
+    }
+    const idToken = authorization.split("Bearer ")[1];
+    try {
+        const decodedToken = await admin.auth().verifyIdToken(idToken);
+        req.user = decodedToken;
+        return next();
+    } catch (err) {
+        return res.status(403).send("Unauthorized");
+    }
+};
+
+// API: जब यूजर कोई टास्क पूरा करे
+app.post("/completeTask", isAuthenticated, async (req, res) => {
+    const userId = req.user.uid;
+    const { taskType, reward } = req.body; // e.g., { taskType: "spinWheel", reward: 5 }
+
+    if (!taskType || !reward) {
+        return res.status(400).send("Missing task details.");
+    }
+
+    try {
+        const userRef = db.collection("users").doc(userId);
+        const userDoc = await userRef.get();
+        if (!userDoc.exists) {
+            return res.status(404).send("User not found.");
+        }
+
+        const newBalance = (userDoc.data().balance || 0) + reward;
+        const newTotalEarned = (userDoc.data().totalEarned || 0) + reward;
+        
+        await userRef.update({
+            balance: newBalance,
+            totalEarned: newTotalEarned,
+        });
+
+        // ट्रांजेक्शन हिस्ट्री में जोड़ें
+        await db.collection("transactions").add({
+            userId: userId,
+            amount: reward,
+            type: "credit",
+            task: taskType,
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        return res.status(200).json({ success: true, newBalance: newBalance });
+    } catch (error) {
+        console.error("Error completing task:", error);
+        return res.status(500).send("Internal Server Error");
+    }
+});
+
+// API: पैसे निकालने का अनुरोध
+app.post("/requestWithdrawal", isAuthenticated, async (req, res) => {
+    const userId = req.user.uid;
+    const { amount, upiId } = req.body;
+
+    if (amount < 50) { // Minimum Withdrawal
+        return res.status(400).send("Minimum withdrawal amount is ₹50.");
+    }
+
+    const userRef = db.collection("users").doc(userId);
+    const userDoc = await userRef.get();
+    const currentBalance = userDoc.data().balance || 0;
+
+    if (currentBalance < amount) {
+        return res.status(400).send("Insufficient balance.");
+    }
+
+    // बैलेंस घटाएं और विथड्रॉवल रिक्वेस्ट बनाएं
+    await userRef.update({ balance: currentBalance - amount });
+
+    await db.collection("withdrawals").add({
+        userId: userId,
+        amount: amount,
+        upiId: upiId,
+        status: "pending", // Admin इसे 'completed' करेगा
+        requestedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    
+    // यहाँ से Admin Panel को नोटिफिकेशन भेज सकते हैं
+    // या Razorpay/Paytm Payout API को कॉल करके ऑटो-ट्रांसफर कर सकते हैं
+
+    return res.status(200).json({ success: true, message: "Withdrawal request received." });
+});
+
+// Firebase Functions के लिए API को एक्सपोर्ट करें
+exports.api = functions.https.onRequest(app);rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Users Collection: कोई भी यूजर सिर्फ अपना डेटा पढ़ और अपडेट कर सकता है।
+    // KYC जैसी संवेदनशील जानकारी सिर्फ Backend (Admin) ही लिख सकता है।
+    match /users/{userId} {
+      allow read, update: if request.auth.uid == userId;
+      allow create: if request.auth.uid != null;
+    }
+    
+    // Transactions Collection: यूजर सिर्फ अपनी ट्रांजेक्शन हिस्ट्री देख सकता है, बना नहीं सकता।
+    // ट्रांजेक्शन सिर्फ Backend से बनेगी।
+    match /transactions/{transactionId} {
+      allow read: if request.auth.uid == resource.data.userId;
+      allow create, update, delete: if false; // कोई भी यूजर सीधे नहीं बना सकता
+    }
+    
+    // Withdrawals Collection: यूजर सिर्फ अपनी रिक्वेस्ट देख सकता है।
+    match /withdrawals/{withdrawalId} {
+      allow read: if request.auth.uid == resource.data.userId;
+      allow create, update, delete: if false; // सिर्फ Backend से होगा
+    }
+
+    // Admin Panel के लिए अलग नियम बनाए जा सकते हैं
+  }
+}
