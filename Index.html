@@ -1,0 +1,48 @@
+import 'package:flutter/material.dart';
+
+class HomeScreen extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('EarnPlus - कमाएं'),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.account_balance_wallet),
+            onPressed: () {
+              // Wallet Screen पर जाएं
+            },
+          ),
+        ],
+      ),
+      body: GridView.count(
+        crossAxisCount: 2,
+        padding: EdgeInsets.all(16.0),
+        childAspectRatio: 8.0 / 9.0,
+        children: <Widget>[
+          _buildTaskCard('Spin Wheel', Icons.gamepad, Colors.orange, () { /* Spin Screen खोलें */ }),
+          _buildTaskCard('Typing Task', Icons.text_fields, Colors.blue, () { /* Typing Screen खोलें */ }),
+          _buildTaskCard('Photo Upload', Icons.camera_alt, Colors.green, () { /* Upload Screen खोलें */ }),
+          _buildTaskCard('Watch Ads', Icons.tv, Colors.red, () { /* Ads Screen खोलें */ }),
+        ],
+      ),
+    );
+  }
+
+  Card _buildTaskCard(String title, IconData icon, Color color, VoidCallback onTap) {
+    return Card(
+      elevation: 4,
+      child: InkWell(
+        onTap: onTap,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            Icon(icon, size: 50.0, color: color),
+            SizedBox(height: 10),
+            Text(title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          ],
+        ),
+      ),
+    );
+  }
+}
